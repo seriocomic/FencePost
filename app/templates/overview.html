@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% set active_page = "overview" %}
+{% block title %}FencePost — Overview{% endblock %}
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
+  <h1 class="section-label" style="border:none;margin:0;padding:0">Host Overview</h1>
+  <form method="post" action="/refresh">
+    <button type="submit" class="btn btn-accent">Refresh All</button>
+  </form>
+</div>
+
+{% if not hosts %}
+<div class="empty-state">
+  <div class="empty-glyph">⊘</div>
+  <div>No hosts configured</div>
+</div>
+{% else %}
+<div class="host-grid">
+  {% for host in hosts %}
+  <div class="card anim-card" style="animation-delay:{{ loop.index0 * 60 }}ms">
+    <div class="card-header">
+      <div>
+        <a href="/host/{{ host.name }}" class="card-host">{{ host.name }}</a>
+        <span class="card-ip">{{ host.hostname }}</span>
+      </div>
+      <span class="badge badge-{{ host.status_class }}{% if host.status_label == 'Unreachable' %} badge-unreachable{% endif %}">
+        {{ host.status_label }}
+      </span>
+    </div>
+
+    {% if host.fetch_error %}
+    <div style="font-size:0.78rem;color:var(--deny);margin-bottom:0.5rem">
+      SSH error: {{ host.fetch_error[:80] }}{% if host.fetch_error|length > 80 %}…{% endif %}
+    </div>
+    {% elif not host.ufw_installed %}
+    <div style="font-size:0.78rem;color:var(--muted);margin-bottom:0.5rem">
+      UFW is not installed on this host
+    </div>
+    {% else %}
+    <div class="card-policy">
+      {% if host.ufw_active %}
+        {{ host.default_policy_text }}
+      {% else %}
+        <span style="color:var(--deny)">Firewall is disabled — all traffic allowed</span>
+      {% endif %}
+    </div>
+
+    {% if host.allowed_services %}
+    <div class="card-services">
+      {% for svc in host.allowed_services[:12] %}
+      <span class="pill">{{ svc }}</span>
+      {% endfor %}
+      {% if host.allowed_services|length > 12 %}
+      <span class="pill" style="opacity:0.6">+{{ host.allowed_services|length - 12 }}</span>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <div style="font-size:0.72rem;color:var(--fg2)">
+      {{ host.rules|length }} rule{{ 's' if host.rules|length != 1 else '' }} active
+    </div>
+
+    {% if host.uncovered_ports %}
+    <div class="card-gaps">
+      {% for p in host.external_gaps[:4] %}
+      <span class="chip chip-warn">{{ p.port }} {{ p.process }}</span>
+      {% endfor %}
+      {% for p in host.local_gaps[:3] %}
+      <span class="chip chip-info">{{ p.port }} {{ p.process }}</span>
+      {% endfor %}
+      {% if host.uncovered_ports|length > 7 %}
+      <span class="chip chip-info">+{{ host.uncovered_ports|length - 7 }} more</span>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if host.is_docker_host %}
+    <div style="font-size:0.65rem;color:var(--docker-note);margin-top:0.4rem">
+      Docker host — ports may bypass UFW via iptables
+    </div>
+    {% endif %}
+    {% endif %}
+
+    <div class="card-footer">
+      <span>
+        {% if host.rules_last_modified %}
+        Rules modified {{ (host.rules_last_modified|localtime).strftime('%d %b %Y %H:%M %Z') }}
+        {% endif %}
+      </span>
+      <a href="/host/{{ host.name }}" class="btn">Details →</a>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

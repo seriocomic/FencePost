@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% set active_page = "detail" %}
+{% block title %}FencePost — {{ host.name }}{% endblock %}
+{% block content %}
+
+{# ===== Host Header ===== #}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
+  <div style="display:flex;align-items:baseline;gap:0.75rem">
+    <h1 style="font-family:var(--font-display);font-weight:800;font-size:1.4rem;color:var(--fg)">{{ host.name }}</h1>
+    <span style="font-size:0.78rem;color:var(--muted)">{{ host.hostname }}</span>
+    <span class="badge badge-{{ host.status_class }}{% if host.status_label == 'Unreachable' %} badge-unreachable{% endif %}">
+      {{ host.status_label }}
+    </span>
+  </div>
+  <form method="post" action="/refresh/{{ host.name }}">
+    <button type="submit" class="btn btn-accent">Refresh</button>
+  </form>
+</div>
+
+{% if host.fetch_error %}
+<div class="card" style="border-left:3px solid var(--deny)">
+  <div style="color:var(--deny);font-size:0.85rem;font-weight:500;margin-bottom:0.3rem">SSH Connection Failed</div>
+  <div style="font-size:0.78rem;color:var(--fg2)">{{ host.fetch_error }}</div>
+</div>
+
+{% elif not host.ufw_installed %}
+<div class="card" style="border-left:3px solid var(--muted)">
+  <div style="color:var(--muted);font-size:0.85rem;font-weight:500">UFW is not installed on this host</div>
+</div>
+
+{% else %}
+
+{# ===== Policy Summary ===== #}
+<div style="font-size:0.82rem;color:var(--fg2);margin-bottom:1.5rem">
+  {% if host.ufw_active %}
+    {{ host.default_policy_text }}
+    ·
+    Default outgoing: {{ host.default_outgoing }}
+    {% if host.default_routed != "disabled" %}· Routed: {{ host.default_routed }}{% endif %}
+  {% else %}
+    <span style="color:var(--deny)">Firewall is disabled — all incoming and outgoing traffic is allowed</span>
+  {% endif %}
+  {% if host.rules_last_modified %}
+  · <span class="text-muted">Rules last modified {{ (host.rules_last_modified|localtime).strftime('%d %b %Y at %H:%M %Z') }}</span>
+  {% endif %}
+</div>
+
+{% if host.is_docker_host %}
+<div class="chip chip-docker mb-2" style="font-size:0.72rem">
+  Docker host — Docker publishes ports via iptables, bypassing UFW. Gap detection has limited value here.
+</div>
+{% endif %}
+
+{# ===== Tabs ===== #}
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="rules">Firewall Rules{% if host.rules %} ({{ host.rules|selectattr('v6', 'equalto', false)|list|length }}){% endif %}</button>
+  <button class="tab-btn" data-tab="gaps">Uncovered Ports{% if host.uncovered_ports %} ({{ host.uncovered_ports|length }}){% endif %}</button>
+  <button class="tab-btn" data-tab="ports">All Listening Ports ({{ host.listening_ports|length }})</button>
+  <button class="tab-btn" data-tab="raw">Raw UFW Output</button>
+</div>
+
+{# ===== Tab: Firewall Rules ===== #}
+<div class="tab-panel active" id="tab-rules">
+{% if host.rules %}
+
+{% set v4_rules = host.rules|selectattr('v6', 'equalto', false)|list %}
+{% set v6_rules = host.rules|selectattr('v6')|list %}
+
+{% for rule in v4_rules %}
+<div class="rule-block {{ rule.action|lower }} anim-rule" style="animation-delay:{{ loop.index0 * 30 }}ms">
+  <div class="rule-top">
+    <span class="badge badge-{{ rule.action|lower }}">{{ rule.action }}</span>
+    <span class="rule-service">{{ rule.service_name }}{% if rule.to != 'Anywhere' %} <span class="text-muted" style="font-size:0.75rem;font-family:var(--font-body)">({{ rule.to }})</span>{% endif %}</span>
+    <span class="rule-num">#{{ rule.number }}</span>
+  </div>
+  <div class="rule-source">
+    {% if rule.direction == 'IN' %}From{% else %}To{% endif %}: {{ rule.source_friendly }}
+    {% if rule.direction == 'IN' %}→ this host{% else %}→ {{ rule.from_addr }}{% endif %}
+  </div>
+  <div class="rule-explain">"{{ rule.explanation }}"</div>
+  {% if rule.comment %}
+  <div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem">Comment: {{ rule.comment }}</div>
+  {% endif %}
+</div>
+{% endfor %}
+
+{% if v6_rules %}
+<details class="mt-2 mb-2">
+  <summary style="font-size:0.75rem;color:var(--muted);padding:0.4rem 0">
+    IPv6 Rules ({{ v6_rules|length }})
+  </summary>
+  <div class="mt-1">
+  {% for rule in v6_rules %}
+  <div class="rule-block {{ rule.action|lower }}" style="opacity:0.7">
+    <div class="rule-top">
+      <span class="badge badge-{{ rule.action|lower }}">{{ rule.action }}</span>
+      <span class="rule-service">{{ rule.service_name }} <span class="text-muted" style="font-size:0.7rem">v6</span></span>
+      <span class="rule-num">#{{ rule.number }}</span>
+    </div>
+    <div class="rule-source">From: {{ rule.source_friendly }}</div>
+    <div class="rule-explain">"{{ rule.explanation }}"</div>
+  </div>
+  {% endfor %}
+  </div>
+</details>
+{% endif %}
+
+{% else %}
+<div class="empty-state">
+  <div class="empty-glyph">∅</div>
+  <div>No UFW rules configured</div>
+</div>
+{% endif %}
+</div>
+
+{# ===== Tab: Uncovered Ports ===== #}
+<div class="tab-panel" id="tab-gaps">
+{% if host.uncovered_ports %}
+<div style="font-size:0.78rem;color:var(--fg2);margin-bottom:0.75rem">
+  These ports are listening but have no matching UFW ALLOW rule.
+</div>
+
+{% for p in host.external_gaps %}
+<div class="rule-block" style="border-left-color:var(--gap-warn);background:#1b1710;margin-bottom:0.35rem">
+  <div style="display:flex;align-items:center;gap:0.6rem">
+    <span class="badge badge-limit" style="font-size:0.55rem">EXPOSED</span>
+    <span style="font-family:var(--font-display);font-weight:500;font-size:0.85rem">Port {{ p.port }}/{{ p.protocol }}</span>
+    <span class="text-muted" style="font-size:0.75rem">{{ p.process }}</span>
+  </div>
+  <div style="font-size:0.75rem;color:var(--fg2);margin-top:0.2rem">
+    Listening on {{ p.bind_description }} — accessible to anyone who can reach this host
+  </div>
+</div>
+{% endfor %}
+
+{% for p in host.local_gaps %}
+<div class="rule-block" style="border-left-color:var(--gap-info);background:#151619;margin-bottom:0.35rem">
+  <div style="display:flex;align-items:center;gap:0.6rem">
+    <span style="font-family:var(--font-display);font-weight:500;font-size:0.85rem;color:var(--muted)">Port {{ p.port }}/{{ p.protocol }}</span>
+    <span class="text-muted" style="font-size:0.75rem">{{ p.process }}</span>
+  </div>
+  <div style="font-size:0.75rem;color:var(--muted);margin-top:0.2rem">
+    Listening on {{ p.bind_description }} only — not externally reachable
+  </div>
+</div>
+{% endfor %}
+
+{% else %}
+<div class="empty-state">
+  <div class="empty-glyph">✓</div>
+  <div>All listening ports are covered by UFW rules</div>
+</div>
+{% endif %}
+</div>
+
+{# ===== Tab: All Listening Ports ===== #}
+<div class="tab-panel" id="tab-ports">
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:0.4rem">
+  {% for p in host.listening_ports|sort(attribute='port') %}
+  <div style="font-size:0.75rem;padding:0.3rem 0.5rem;background:var(--bg3);border-radius:2px;display:flex;justify-content:space-between">
+    <span>
+      <span style="color:var(--fg)">{{ p.port }}/{{ p.protocol }}</span>
+      <span class="text-muted">{{ p.process }}</span>
+    </span>
+    <span>
+      {% if p.has_ufw_rule %}
+      <span style="color:var(--allow);font-size:0.65rem">✓ covered</span>
+      {% elif p.is_external %}
+      <span style="color:var(--gap-warn);font-size:0.65rem">⚠ uncovered</span>
+      {% else %}
+      <span style="color:var(--muted);font-size:0.65rem">local</span>
+      {% endif %}
+    </span>
+  </div>
+  {% endfor %}
+</div>
+</div>
+
+{# ===== Tab: Raw UFW Output ===== #}
+<div class="tab-panel" id="tab-raw">
+<div class="raw-output">{% for rule in host.rules %}[{{ rule.number }}] {{ rule.to }}  {{ rule.action }} {{ rule.direction }}  {{ rule.from_addr }}{% if rule.comment %}  # {{ rule.comment }}{% endif %}
+{% endfor %}</div>
+</div>
+
+<script>
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+</script>
+
+{% endif %}{# end ufw_installed + no error #}
+
+<div style="margin-top:2rem">
+  <a href="/" class="btn">← Back to Overview</a>
+</div>
+
+{% endblock %}

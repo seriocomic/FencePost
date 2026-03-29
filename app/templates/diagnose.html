@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% set active_page = "diagnose" %}
+{% block title %}FencePost — Diagnose{% endblock %}
+{% block content %}
+
+<h1 class="section-label" style="border:none;margin-bottom:0.25rem;padding:0">Connection Diagnostic</h1>
+<p style="font-size:0.78rem;color:var(--fg2);margin-bottom:1.5rem">
+  Test whether a connection would be allowed or blocked by UFW rules.
+  <span class="text-muted">This only evaluates UFW — Docker iptables, Cloudflare tunnels, NPM proxying, and inter-VLAN routing are not checked.</span>
+</p>
+
+<form method="post" action="/diagnose" class="card mb-2">
+  <div class="form-row">
+    <div class="form-group">
+      <label for="source_ip">Source (IP address)</label>
+      <div style="display:flex;gap:0.5rem;align-items:center">
+        <input type="text" id="source_ip" name="source_ip" class="form-input"
+               placeholder="192.168.1.5"
+               value="{{ result.source_ip if result else '' }}" required>
+      </div>
+      {% if devices %}
+      <div style="margin-top:0.35rem;display:flex;gap:0.3rem;flex-wrap:wrap">
+        {% for dev in devices %}
+        <button type="button" class="btn" onclick="document.getElementById('source_ip').value='{{ dev.ip }}'">
+          {{ dev.name }}
+        </button>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="form-group">
+      <label for="dest_host">Destination Host</label>
+      <select id="dest_host" name="dest_host" class="form-select" required>
+        <option value="">Select host…</option>
+        {% for h in hosts %}
+        <option value="{{ h.name }}" {% if result and result.dest_host == h.name %}selected{% endif %}>
+          {{ h.name }} ({{ h.hostname }})
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label for="dest_port">Destination Port</label>
+      <input type="number" id="dest_port" name="dest_port" class="form-input"
+             placeholder="8090" min="1" max="65535"
+             value="{{ result.dest_port if result else '' }}" required>
+    </div>
+    <div class="form-group">
+      <label for="dest_protocol">Protocol</label>
+      <select id="dest_protocol" name="dest_protocol" class="form-select">
+        <option value="tcp" {% if not result or result.dest_protocol == 'tcp' %}selected{% endif %}>TCP</option>
+        <option value="udp" {% if result and result.dest_protocol == 'udp' %}selected{% endif %}>UDP</option>
+      </select>
+    </div>
+    <div class="form-group" style="flex:0 0 auto">
+      <label class="sr-only">Submit</label>
+      <button type="submit" class="btn btn-accent" style="padding:0.45rem 1.2rem">Diagnose</button>
+    </div>
+  </div>
+</form>
+
+{% if result %}
+{# ===== Diagnostic Result ===== #}
+<div class="mt-3">
+
+  {# Source identification #}
+  <div class="pipeline">
+    <div class="pipeline-node anim-pipe" style="animation-delay:0ms">
+      <div style="font-size:0.82rem;color:var(--fg)">
+        <strong>Source:</strong> {{ result.source_ip }}
+        <span class="text-muted">— {{ result.source_network }}</span>
+      </div>
+    </div>
+
+    <div class="pipeline-node anim-pipe" style="animation-delay:60ms">
+      <div style="font-size:0.82rem;color:var(--fg)">
+        <strong>Destination:</strong> {{ result.dest_host }} port {{ result.dest_port }}/{{ result.dest_protocol }}
+      </div>
+    </div>
+
+    {% if not result.ufw_active %}
+    <div class="pipeline-node anim-pipe" style="animation-delay:120ms">
+      <div style="font-size:0.82rem;color:var(--deny)">
+        <strong>UFW is inactive</strong> — firewall is not filtering traffic
+      </div>
+    </div>
+    {% else %}
+
+    <div class="pipeline-node anim-pipe" style="animation-delay:120ms">
+      <div style="font-size:0.78rem;color:var(--fg2)">
+        Default policy: <strong>{{ result.default_policy }}</strong> incoming
+      </div>
+    </div>
+
+    {# Rule evaluations #}
+    {% for ev in result.evaluations %}
+    <div class="pipeline-node {{ 'match' if ev.matched else 'nomatch' }} anim-pipe" style="animation-delay:{{ (loop.index0 + 3) * 60 }}ms">
+      <div style="font-size:0.78rem">
+        <span class="text-muted">Rule #{{ ev.rule.number }}:</span>
+        <span class="badge badge-{{ ev.rule.action|lower }}" style="font-size:0.5rem;vertical-align:1px">{{ ev.rule.action }}</span>
+        {{ ev.rule.to }} from {{ ev.rule.from_addr }}
+      </div>
+      <div style="font-size:0.72rem;color:var(--muted);margin-top:0.15rem;padding-left:0.5rem">
+        {% if ev.matched %}
+          <span style="color:var(--allow)">✓ Match</span> — {{ ev.reason }}
+        {% else %}
+          <span style="color:var(--muted)">✗</span> {{ ev.reason }}
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+
+    {% endif %}
+
+    {# Verdict #}
+    {% set verdict_delay = (result.evaluations|length + 3) * 60 if result.ufw_active else 180 %}
+    <div class="pipeline-node verdict verdict-{{ result.verdict|lower }} anim-pipe" style="animation-delay:{{ verdict_delay }}ms">
+      <div class="pipeline-verdict" style="color:{% if result.verdict == 'ALLOWED' %}var(--allow){% elif result.verdict == 'REJECTED' %}var(--reject){% else %}var(--deny){% endif %}">
+        {{ result.verdict }}
+      </div>
+      <div style="font-size:0.78rem;color:var(--fg2);margin-top:0.15rem">
+        {{ result.verdict_reason }}
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endif %}
+
+{% endblock %}

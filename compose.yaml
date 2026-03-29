@@ -1,0 +1,16 @@
+services:
+  fencepost:
+    build: .
+    container_name: fencepost
+    restart: unless-stopped
+    ports:
+      - "8890:8000"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./ssh:/app/ssh:ro
+      - ./data:/app/data
+    env_file: .env
+    environment:
+      - TZ=Australia/Melbourne
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"

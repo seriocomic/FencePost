@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+ssh/id_ed25519
+ssh/id_ed25519.pub
+data/last_state.json
+.env
