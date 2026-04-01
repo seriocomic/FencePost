@@ -132,11 +132,14 @@ async def overview(request: Request, user: str = Depends(require_auth)):
         except Exception as e:
             logger.error("EventFeed notification failed: %s", e)
 
+    network_names = config.get("networks", {})
+
     return templates.TemplateResponse("overview.html", {
         "request": request,
         "hosts": states,
         "last_fetch": _last_fetch,
         "user": user,
+        "network_names": network_names,
     })
 
 
@@ -152,10 +155,13 @@ async def host_detail(request: Request, host_name: str, user: str = Depends(requ
     global _cached_states
     _cached_states = [s if s.name != host_name else state for s in _cached_states]
 
+    network_names = config.get("networks", {})
+
     return templates.TemplateResponse("host_detail.html", {
         "request": request,
         "host": state,
         "user": user,
+        "network_names": network_names,
     })
 
 
@@ -203,6 +209,68 @@ async def diagnose_submit(
         "result": result,
         "user": user,
     })
+
+
+@app.get("/compare", response_class=HTMLResponse)
+async def compare_hosts(request: Request, user: str = Depends(require_auth)):
+    global _cached_states, _last_fetch
+
+    config = _get_config()
+    states = fetch_all_hosts(config)
+    _cached_states = states
+    _last_fetch = datetime.now(timezone.utc)
+
+    comparison = _build_comparison(states)
+
+    return templates.TemplateResponse("compare.html", {
+        "request": request,
+        "hosts": states,
+        "comparison": comparison,
+        "last_fetch": _last_fetch,
+        "user": user,
+    })
+
+
+def _build_comparison(states: list) -> list[dict]:
+    """Build a service comparison matrix across all hosts."""
+    active_states = [s for s in states if s.ufw_active and not s.fetch_error]
+
+    # Collect all unique services across hosts
+    all_services: dict[str, dict] = {}
+    for state in active_states:
+        for rule in state.rules:
+            if rule.v6:
+                continue
+            svc = rule.service_name
+            if svc not in all_services:
+                all_services[svc] = {"service": svc, "hosts": {}}
+            if state.name not in all_services[svc]["hosts"]:
+                all_services[svc]["hosts"][state.name] = []
+            all_services[svc]["hosts"][state.name].append({
+                "action": rule.action,
+                "source": rule.source_friendly,
+                "number": rule.number,
+                "raw": rule.raw,
+            })
+
+    # Mark inconsistencies
+    result = []
+    host_names = [s.name for s in active_states]
+    for svc, data in sorted(all_services.items()):
+        data["host_names"] = host_names
+        # Check if all hosts that have this service treat it the same way
+        summaries = set()
+        for host_name in host_names:
+            rules = data["hosts"].get(host_name, [])
+            if rules:
+                key = tuple((r["action"], r["source"]) for r in rules)
+                summaries.add(key)
+            else:
+                summaries.add(None)
+        data["inconsistent"] = len(summaries) > 1
+        result.append(data)
+
+    return result
 
 
 @app.post("/refresh", response_class=HTMLResponse)

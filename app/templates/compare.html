@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% set active_page = "compare" %}
+{% block title %}FencePost — Compare{% endblock %}
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
+  <h1 class="section-label" style="border:none;margin:0;padding:0">Rule Comparison</h1>
+  <form method="post" action="/refresh">
+    <button type="submit" class="btn btn-accent">Refresh All</button>
+  </form>
+</div>
+
+{% if not comparison %}
+<div class="empty-state">
+  <div class="empty-glyph">∅</div>
+  <div>No active hosts with rules to compare</div>
+</div>
+{% else %}
+
+{% set host_names = comparison[0].host_names %}
+
+<div style="font-size:0.78rem;color:var(--fg2);margin-bottom:1rem">
+  Comparing {{ host_names|length }} active host{{ 's' if host_names|length != 1 else '' }}.
+  Rows highlighted in amber indicate services configured differently across hosts.
+</div>
+
+<div class="compare-wrap">
+<table class="compare-table">
+  <thead>
+    <tr>
+      <th>Service</th>
+      {% for name in host_names %}
+      <th><a href="/host/{{ name }}" style="color:var(--fg);text-decoration:none">{{ name }}</a></th>
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in comparison %}
+    <tr class="{% if row.inconsistent %}compare-row-inconsistent{% endif %}">
+      <td style="font-family:var(--font-display);font-weight:500;white-space:nowrap">
+        {{ row.service }}
+        {% if row.inconsistent %}
+        <span class="badge badge-shadow" style="margin-left:0.3rem;font-size:0.5rem">DIFFERS</span>
+        {% endif %}
+      </td>
+      {% for name in host_names %}
+      <td>
+        {% if name in row.hosts %}
+          {% for r in row.hosts[name] %}
+          <div{% if not loop.first %} style="margin-top:0.25rem"{% endif %}>
+            <span class="badge badge-{{ r.action|lower }}" style="font-size:0.5rem">{{ r.action }}</span>
+            <span style="font-size:0.7rem;color:var(--fg2)">{{ r.source }}</span>
+          </div>
+          {% endfor %}
+        {% else %}
+        <span class="compare-cell-empty">--</span>
+        {% endif %}
+      </td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

@@ -19,6 +19,12 @@ class UFWRule:
     source_friendly: str = ""   # e.g. "the Trusted VLAN", "anywhere"
     dest_friendly: str = ""     # e.g. "port 22/tcp"
     explanation: str = ""       # full plain English sentence
+    tldr: str = ""              # one-line technical summary
+    eli5: str = ""              # plain language explanation for non-technical users
+    raw: str = ""               # reconstructed raw UFW rule line
+    shadowed_by: int | None = None  # rule number that shadows this rule
+    shadow_type: str = ""           # "redundant", "conflict", "duplicate"
+    shadow_note: str = ""           # human-readable explanation
 
 
 @dataclass

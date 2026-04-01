@@ -48,7 +48,7 @@
     {% if host.allowed_services %}
     <div class="card-services">
       {% for svc in host.allowed_services[:12] %}
-      <span class="pill">{{ svc }}</span>
+      <span class="pill" data-host="{{ host.name }}" data-service="{{ svc }}">{{ svc }}</span>
       {% endfor %}
       {% if host.allowed_services|length > 12 %}
       <span class="pill" style="opacity:0.6">+{{ host.allowed_services|length - 12 }}</span>
@@ -63,10 +63,10 @@
     {% if host.uncovered_ports %}
     <div class="card-gaps">
       {% for p in host.external_gaps[:4] %}
-      <span class="chip chip-warn">{{ p.port }} {{ p.process }}</span>
+      <span class="chip chip-warn chip-clickable" data-host="{{ host.name }}" data-port="{{ p.port }}" data-type="external">{{ p.port }} {{ p.process }}</span>
       {% endfor %}
       {% for p in host.local_gaps[:3] %}
-      <span class="chip chip-info">{{ p.port }} {{ p.process }}</span>
+      <span class="chip chip-info chip-clickable" data-host="{{ host.name }}" data-port="{{ p.port }}" data-type="local">{{ p.port }} {{ p.process }}</span>
       {% endfor %}
       {% if host.uncovered_ports|length > 7 %}
       <span class="chip chip-info">+{{ host.uncovered_ports|length - 7 }} more</span>
@@ -93,4 +93,250 @@
   {% endfor %}
 </div>
 {% endif %}
+
+{# ===== Rule data for modals ===== #}
+<script>
+var hostRules = {
+  {% for host in hosts %}
+  {% if host.ufw_active %}
+  "{{ host.name }}": {
+    defaultIncoming: "{{ host.default_incoming }}",
+    totalV4: {{ host.rules|selectattr('v6', 'equalto', false)|list|length }},
+    rules: [
+      {% for rule in host.rules if not rule.v6 %}
+      {
+        num: {{ rule.number }},
+        action: "{{ rule.action }}",
+        service: "{{ rule.service_name }}",
+        to: "{{ rule.to }}",
+        fromAddr: "{{ rule.from_addr }}",
+        direction: "{{ rule.direction }}",
+        sourceFriendly: "{{ rule.source_friendly }}",
+        explanation: {{ rule.explanation|tojson }},
+        tldr: {{ rule.tldr|tojson }},
+        eli5: {{ rule.eli5|tojson }},
+        raw: {{ rule.raw|tojson }},
+        comment: {{ (rule.comment or '')|tojson }}
+      }{{ "," if not loop.last }}
+      {% endfor %}
+    ]
+  }{{ "," if not loop.last }}
+  {% endif %}
+  {% endfor %}
+};
+</script>
+
+{# ===== Overview Rule Modal ===== #}
+<div class="modal-overlay" id="overview-modal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div style="display:flex;align-items:baseline;gap:0.6rem">
+        <span class="rule-service" id="ov-modal-service"></span>
+        <span class="text-muted" id="ov-modal-host" style="font-size:0.72rem"></span>
+      </div>
+      <button type="button" class="modal-close" id="ov-modal-close">&times;</button>
+    </div>
+    <div class="modal-body" id="ov-modal-body"></div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var modal = document.getElementById('overview-modal');
+  var closeBtn = document.getElementById('ov-modal-close');
+
+  function getStrictness(action, fromAddr) {
+    if (action === 'LIMIT') return { label: 'Protective', cls: 'modal-strictness-protective' };
+    if (action === 'DENY' || action === 'REJECT') return { label: 'Restrictive', cls: 'modal-strictness-restrictive' };
+    if (action === 'ALLOW' && (fromAddr === 'Anywhere' || fromAddr === '*'))
+      return { label: 'Broad', cls: 'modal-strictness-broad' };
+    return { label: 'Scoped', cls: 'modal-strictness-scoped' };
+  }
+
+  function escHtml(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  document.querySelectorAll('.pill[data-host][data-service]').forEach(function(pill) {
+    pill.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var hostName = pill.dataset.host;
+      var service = pill.dataset.service;
+      var hostData = hostRules[hostName];
+      if (!hostData) return;
+
+      var matching = hostData.rules.filter(function(r) { return r.service === service; });
+      if (!matching.length) return;
+
+      document.getElementById('ov-modal-service').textContent = service;
+      document.getElementById('ov-modal-host').textContent = 'on ' + hostName;
+
+      var body = document.getElementById('ov-modal-body');
+      var html = '';
+
+      matching.forEach(function(r) {
+        var strict = getStrictness(r.action, r.fromAddr);
+        var dir = r.direction === 'IN' ? 'Incoming' : 'Outgoing';
+        var posText = 'Rule #' + r.num + ' of ' + hostData.totalV4;
+
+        html += '<div class="modal-rule-group">';
+        html += '<div style="display:flex;align-items:baseline;gap:0.5rem;margin-bottom:0.5rem">';
+        html += '<span class="badge badge-' + r.action.toLowerCase() + '">' + escHtml(r.action) + '</span>';
+        html += '<span class="modal-strictness ' + strict.cls + '">' + escHtml(strict.label) + '</span>';
+        html += '<span class="rule-num">' + escHtml(posText) + '</span>';
+        html += '</div>';
+        html += '<div class="modal-raw">' + escHtml(r.raw) + '</div>';
+        html += '<div style="font-size:0.78rem;color:var(--fg2);margin-top:0.4rem">' + escHtml(dir + ' from ' + r.sourceFriendly) + '</div>';
+        html += '<div style="font-size:0.78rem;font-style:italic;color:var(--muted);margin-top:0.2rem">"' + escHtml(r.explanation) + '"</div>';
+        if (r.comment) {
+          html += '<div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem">Comment: ' + escHtml(r.comment) + '</div>';
+        }
+        /* Scoped alternative for broad ALLOW rules */
+        if (r.action === 'ALLOW' && (r.fromAddr === 'Anywhere' || r.fromAddr === '*') && r.to !== 'Anywhere') {
+          var nets = Object.keys(networkNames);
+          if (nets.length > 0) {
+            html += '<div style="margin-top:0.5rem"><div class="modal-label">Suggested Alternative</div>';
+            html += '<div style="font-size:0.7rem;color:var(--muted);margin-bottom:0.3rem">Scope this rule to a specific network:</div>';
+            nets.forEach(function(cidr) {
+              var parts = r.to.split('/');
+              var port = parts[0];
+              var proto = parts[1] || 'tcp';
+              html += '<div class="modal-command" style="margin-top:0.25rem">sudo ufw allow from ' + escHtml(cidr) + ' to any port ' + escHtml(port) + ' proto ' + escHtml(proto);
+              html += '  <span style="color:var(--muted)"># ' + escHtml(networkNames[cidr]) + '</span></div>';
+            });
+            html += '</div>';
+          }
+        }
+        html += '</div>';
+      });
+
+      var policyMap = { deny: 'denied (silently dropped)', allow: 'allowed through', reject: 'rejected (with notice to sender)' };
+      html += '<div class="modal-default-policy" style="margin-top:0.75rem">';
+      html += 'If no rule matches, incoming traffic is ' + (policyMap[hostData.defaultIncoming] || hostData.defaultIncoming) + ' by default.';
+      html += '</div>';
+
+      body.innerHTML = html;
+      modal.classList.add('open');
+    });
+  });
+
+  closeBtn.addEventListener('click', function() { modal.classList.remove('open'); });
+  modal.addEventListener('click', function(e) {
+    if (e.target === modal) modal.classList.remove('open');
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      modal.classList.remove('open');
+      document.getElementById('gap-modal').classList.remove('open');
+    }
+  });
+})();
+</script>
+
+{# ===== Gap data for modals ===== #}
+<script>
+var hostGaps = {
+  {% for host in hosts %}
+  {% if host.ufw_active %}
+  "{{ host.name }}": {
+    gaps: [
+      {% for p in host.uncovered_ports %}
+      { port: {{ p.port }}, protocol: "{{ p.protocol }}", address: "{{ p.address }}", process: {{ p.process|tojson }}, bindDesc: "{{ p.bind_description }}", isExternal: {{ p.is_external|tojson }} }{{ "," if not loop.last }}
+      {% endfor %}
+    ]
+  }{{ "," if not loop.last }}
+  {% endif %}
+  {% endfor %}
+};
+var networkNames = {{ network_names|tojson }};
+</script>
+
+{# ===== Gap Detail Modal ===== #}
+<div class="modal-overlay" id="gap-modal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div style="display:flex;align-items:baseline;gap:0.6rem">
+        <span class="rule-service" id="gap-modal-title"></span>
+        <span class="text-muted" id="gap-modal-host" style="font-size:0.72rem"></span>
+      </div>
+      <button type="button" class="modal-close" id="gap-modal-close">&times;</button>
+    </div>
+    <div class="modal-body" id="gap-modal-body"></div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var modal = document.getElementById('gap-modal');
+  var closeBtn = document.getElementById('gap-modal-close');
+
+  function escHtml(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  document.querySelectorAll('.chip-clickable').forEach(function(chip) {
+    chip.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var hostName = chip.dataset.host;
+      var port = parseInt(chip.dataset.port, 10);
+      var gapType = chip.dataset.type;
+      var hostData = hostGaps[hostName];
+      if (!hostData) return;
+
+      var gap = hostData.gaps.find(function(g) { return g.port === port; });
+      if (!gap) return;
+
+      document.getElementById('gap-modal-title').textContent = 'Port ' + gap.port + '/' + gap.protocol;
+      document.getElementById('gap-modal-host').textContent = 'on ' + hostName;
+
+      var body = document.getElementById('gap-modal-body');
+      var html = '';
+
+      /* Exposure badge */
+      if (gap.isExternal) {
+        html += '<div class="modal-section"><span class="badge badge-limit">EXPOSED</span>';
+        html += ' <span style="font-size:0.78rem;color:var(--fg2)">Listening on ' + escHtml(gap.bindDesc) + ' - accessible to anyone who can reach this host</span></div>';
+      } else {
+        html += '<div class="modal-section"><span class="badge badge-unreachable">LOCAL</span>';
+        html += ' <span style="font-size:0.78rem;color:var(--fg2)">Listening on ' + escHtml(gap.bindDesc) + ' only - not externally reachable</span></div>';
+      }
+
+      /* Process */
+      if (gap.process) {
+        html += '<div class="modal-section"><div class="modal-label">Process</div>';
+        html += '<div style="font-size:0.82rem;color:var(--fg)">' + escHtml(gap.process) + '</div></div>';
+      }
+
+      /* Suggested fix */
+      html += '<div class="modal-section"><div class="modal-label">Suggested Fix</div>';
+      html += '<div class="modal-command">sudo ufw allow ' + gap.port + '/' + gap.protocol + '</div>';
+
+      /* Scoped alternatives */
+      var nets = Object.keys(networkNames);
+      if (nets.length > 0) {
+        html += '<div style="font-size:0.7rem;color:var(--muted);margin-top:0.5rem">Or scope to a specific network:</div>';
+        nets.forEach(function(cidr) {
+          html += '<div class="modal-command" style="margin-top:0.3rem">sudo ufw allow from ' + escHtml(cidr) + ' to any port ' + gap.port + ' proto ' + gap.protocol;
+          html += '  <span style="color:var(--muted)"># ' + escHtml(networkNames[cidr]) + '</span></div>';
+        });
+      }
+      html += '</div>';
+
+      body.innerHTML = html;
+      modal.classList.add('open');
+    });
+  });
+
+  closeBtn.addEventListener('click', function() { modal.classList.remove('open'); });
+  modal.addEventListener('click', function(e) {
+    if (e.target === modal) modal.classList.remove('open');
+  });
+})();
+</script>
 {% endblock %}

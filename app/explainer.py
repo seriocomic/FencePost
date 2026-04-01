@@ -97,6 +97,13 @@ def explain_rules(
         # Build explanation sentence
         rule.explanation = _build_explanation(rule)
 
+        # Build TL;DR and ELI5
+        rule.tldr = _build_tldr(rule)
+        rule.eli5 = _build_eli5(rule)
+
+        # Reconstructed raw rule line
+        rule.raw = _build_raw(rule)
+
 
 def _extract_port(to_field: str) -> int | None:
     """Extract port number from a UFW 'to' field like '22/tcp', '80,443/tcp'."""
@@ -226,3 +233,90 @@ def _build_explanation(rule: UFWRule) -> str:
         )
 
     return f"{action_verb} {direction_text} traffic to {service} from {source}"
+
+
+def _build_tldr(rule: UFWRule) -> str:
+    """One-line technical summary."""
+    action = rule.action
+    direction = "in" if rule.direction == "IN" else "out"
+    proto = ""
+    if "/" in rule.to:
+        proto = rule.to.split("/")[1].upper()
+    port_part = rule.to if rule.to != "Anywhere" else "all ports"
+    src = rule.from_addr if rule.from_addr != "Anywhere" else "*"
+
+    if action == "LIMIT":
+        return f"{action} {direction} {port_part} from {src} (6 conn/30s before drop)"
+    return f"{action} {direction} {port_part} from {src}"
+
+
+def _build_eli5(rule: UFWRule) -> str:
+    """Plain language explanation for non-technical users."""
+    service = rule.service_name
+    source = rule.source_friendly
+
+    if rule.to == "Anywhere" and rule.from_addr == "Anywhere":
+        if rule.action == "ALLOW":
+            return (
+                "This is a wide-open rule - it lets all traffic through with no restrictions. "
+                "Think of it like leaving every door and window in the house unlocked."
+            )
+        if rule.action == "DENY":
+            return (
+                "This blocks everything by default - no traffic gets in unless another rule specifically allows it. "
+                "Think of it like locking every door and only giving keys to specific people."
+            )
+        if rule.action == "REJECT":
+            return (
+                "This blocks everything and sends back a 'go away' message. "
+                "Like a locked door with a sign saying 'closed'."
+            )
+
+    if rule.action == "ALLOW":
+        if source == "anywhere":
+            return (
+                f"{service} is open to the entire internet - anyone can connect. "
+                f"This is like putting a public entrance on the street."
+            )
+        return (
+            f"Only devices from {source} can reach {service} on this machine. "
+            f"Everyone else is turned away at the door."
+        )
+
+    if rule.action == "DENY":
+        if source == "anywhere":
+            return (
+                f"Nobody can reach {service} - the door is locked and there is no keyhole. "
+                f"Blocked traffic is silently ignored."
+            )
+        return (
+            f"Devices from {source} are specifically blocked from reaching {service}. "
+            f"Their connection attempts are silently dropped."
+        )
+
+    if rule.action == "LIMIT":
+        return (
+            f"{service} is accessible from {source}, but with a speed bump - "
+            f"if someone tries to connect more than 6 times in 30 seconds, "
+            f"they get temporarily locked out. Good for stopping brute-force attacks."
+        )
+
+    if rule.action == "REJECT":
+        if source == "anywhere":
+            return (
+                f"Nobody can reach {service}. Unlike a silent block, this sends back "
+                f"a polite 'connection refused' message so the sender knows immediately."
+            )
+        return (
+            f"Devices from {source} are blocked from {service} and told 'no'. "
+            f"They get an immediate rejection instead of waiting and timing out."
+        )
+
+    return rule.explanation
+
+
+def _build_raw(rule: UFWRule) -> str:
+    """Reconstruct the raw UFW rule line."""
+    comment_part = f"  # {rule.comment}" if rule.comment else ""
+    v6_tag = " (v6)" if rule.v6 else ""
+    return f"[{rule.number}] {rule.to}{v6_tag}  {rule.action} {rule.direction}  {rule.from_addr}{comment_part}"

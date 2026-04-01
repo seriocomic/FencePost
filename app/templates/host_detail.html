@@ -66,11 +66,36 @@
 {% set v4_rules = host.rules|selectattr('v6', 'equalto', false)|list %}
 {% set v6_rules = host.rules|selectattr('v6')|list %}
 
+<input type="text" class="form-input" id="rule-search" placeholder="Filter by service, source, action..." style="margin-bottom:1rem;max-width:400px">
+
 {% for rule in v4_rules %}
-<div class="rule-block {{ rule.action|lower }} anim-rule" style="animation-delay:{{ loop.index0 * 30 }}ms">
+<div class="rule-block {{ rule.action|lower }} anim-rule rule-clickable{% if rule.shadowed_by %} rule-shadowed{% endif %}"
+     style="animation-delay:{{ loop.index0 * 30 }}ms"
+     data-rule-num="{{ rule.number }}"
+     data-rule-action="{{ rule.action }}"
+     data-rule-service="{{ rule.service_name }}"
+     data-rule-to="{{ rule.to }}"
+     data-rule-from="{{ rule.from_addr }}"
+     data-rule-direction="{{ rule.direction }}"
+     data-rule-source-friendly="{{ rule.source_friendly }}"
+     data-rule-explanation="{{ rule.explanation }}"
+     data-rule-tldr="{{ rule.tldr }}"
+     data-rule-eli5="{{ rule.eli5 }}"
+     data-rule-comment="{{ rule.comment or '' }}"
+     data-rule-raw="{{ rule.raw }}"
+     data-rule-total="{{ v4_rules|length }}"
+     data-rule-default-incoming="{{ host.default_incoming }}"
+     data-rule-v6="{{ rule.v6 }}"
+     data-rule-dest-friendly="{{ rule.dest_friendly }}"
+     data-rule-source="{{ rule.source_friendly }}"
+     data-rule-from-raw="{{ rule.from_addr }}"
+     data-rule-shadowed-by="{{ rule.shadowed_by or '' }}"
+     data-rule-shadow-type="{{ rule.shadow_type }}"
+     data-rule-shadow-note="{{ rule.shadow_note }}">
   <div class="rule-top">
     <span class="badge badge-{{ rule.action|lower }}">{{ rule.action }}</span>
     <span class="rule-service">{{ rule.service_name }}{% if rule.to != 'Anywhere' %} <span class="text-muted" style="font-size:0.75rem;font-family:var(--font-body)">({{ rule.to }})</span>{% endif %}</span>
+    {% if rule.shadowed_by %}<span class="badge badge-shadow">{{ rule.shadow_type|upper }}</span>{% endif %}
     <span class="rule-num">#{{ rule.number }}</span>
   </div>
   <div class="rule-source">
@@ -128,8 +153,17 @@
     <span class="text-muted" style="font-size:0.75rem">{{ p.process }}</span>
   </div>
   <div style="font-size:0.75rem;color:var(--fg2);margin-top:0.2rem">
-    Listening on {{ p.bind_description }} — accessible to anyone who can reach this host
+    Listening on {{ p.bind_description }} - accessible to anyone who can reach this host
   </div>
+  <details style="margin-top:0.3rem">
+    <summary style="font-size:0.68rem;color:var(--accent)">Fix commands</summary>
+    <div style="margin-top:0.3rem">
+      <div class="modal-command">sudo ufw allow {{ p.port }}/{{ p.protocol }}</div>
+      {% for cidr, name in network_names.items() %}
+      <div class="modal-command" style="margin-top:0.2rem">sudo ufw allow from {{ cidr }} to any port {{ p.port }} proto {{ p.protocol }}  <span style="color:var(--muted)"># {{ name }}</span></div>
+      {% endfor %}
+    </div>
+  </details>
 </div>
 {% endfor %}
 
@@ -140,7 +174,7 @@
     <span class="text-muted" style="font-size:0.75rem">{{ p.process }}</span>
   </div>
   <div style="font-size:0.75rem;color:var(--muted);margin-top:0.2rem">
-    Listening on {{ p.bind_description }} only — not externally reachable
+    Listening on {{ p.bind_description }} only - not externally reachable
   </div>
 </div>
 {% endfor %}
@@ -182,6 +216,54 @@
 {% endfor %}</div>
 </div>
 
+{# ===== Rule Detail Modal ===== #}
+<div class="modal-overlay" id="rule-modal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div style="display:flex;align-items:baseline;gap:0.6rem">
+        <span class="badge" id="modal-badge"></span>
+        <span class="rule-service" id="modal-service"></span>
+        <span class="rule-num" id="modal-num"></span>
+        <span class="modal-strictness" id="modal-strictness"></span>
+      </div>
+      <button type="button" class="modal-close" id="modal-close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-section">
+        <div class="modal-label">Raw Rule</div>
+        <div class="modal-raw" id="modal-raw"></div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-label">Position</div>
+        <div class="modal-position" id="modal-position"></div>
+      </div>
+      <div class="modal-section" id="modal-shadow-section" style="display:none">
+        <div class="modal-label">Shadow Warning</div>
+        <div class="modal-shadow-warning" id="modal-shadow-note"></div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-label">Rule Details</div>
+        <div style="font-size:0.78rem;color:var(--fg2)" id="modal-details"></div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-label">TL;DR</div>
+        <div class="modal-tldr" id="modal-tldr"></div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-label">ELI5</div>
+        <div class="modal-eli5" id="modal-eli5"></div>
+      </div>
+      <div class="modal-section" id="modal-suggestion-section" style="display:none">
+        <div class="modal-label">Suggested Alternative</div>
+        <div id="modal-suggestions"></div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-default-policy" id="modal-default-policy"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -191,6 +273,127 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
   });
 });
+
+var networkNames = {{ network_names|tojson }};
+
+/* Strictness classification */
+function getStrictness(action, fromAddr) {
+  if (action === 'LIMIT') return { label: 'Protective', cls: 'modal-strictness-protective' };
+  if (action === 'DENY' || action === 'REJECT') return { label: 'Restrictive', cls: 'modal-strictness-restrictive' };
+  if (action === 'ALLOW' && (fromAddr === 'Anywhere' || fromAddr === '*'))
+    return { label: 'Broad', cls: 'modal-strictness-broad' };
+  return { label: 'Scoped', cls: 'modal-strictness-scoped' };
+}
+
+/* Rule detail modal */
+const modal = document.getElementById('rule-modal');
+const closeBtn = document.getElementById('modal-close');
+
+document.querySelectorAll('.rule-clickable').forEach(block => {
+  block.addEventListener('click', () => {
+    const d = block.dataset;
+    const badge = document.getElementById('modal-badge');
+    badge.textContent = d.ruleAction;
+    badge.className = 'badge badge-' + d.ruleAction.toLowerCase();
+
+    document.getElementById('modal-service').textContent = d.ruleService;
+    document.getElementById('modal-num').textContent = '#' + d.ruleNum;
+
+    /* Strictness */
+    const strict = getStrictness(d.ruleAction, d.ruleFromRaw);
+    const strictEl = document.getElementById('modal-strictness');
+    strictEl.textContent = strict.label;
+    strictEl.className = 'modal-strictness ' + strict.cls;
+
+    /* Shadow warning */
+    const shadowSection = document.getElementById('modal-shadow-section');
+    if (d.ruleShadowedBy) {
+      document.getElementById('modal-shadow-note').textContent = d.ruleShadowNote;
+      shadowSection.style.display = '';
+    } else {
+      shadowSection.style.display = 'none';
+    }
+
+    /* Raw rule */
+    document.getElementById('modal-raw').textContent = d.ruleRaw;
+
+    /* Position */
+    const total = parseInt(d.ruleTotal, 10);
+    const num = parseInt(d.ruleNum, 10);
+    let posText = 'Rule #' + num + ' of ' + total + '. ';
+    posText += 'UFW evaluates rules top-to-bottom - first match wins. ';
+    if (num <= 3) {
+      posText += 'This rule is near the top, so it takes priority over most other rules.';
+    } else if (num > total - 3) {
+      posText += 'This rule is near the bottom, so earlier rules may match first.';
+    } else {
+      posText += 'This rule is in the middle of the chain.';
+    }
+    document.getElementById('modal-position').textContent = posText;
+
+    /* Details */
+    const dir = d.ruleDirection === 'IN' ? 'Incoming' : 'Outgoing';
+    let details = dir + ' - ' + d.ruleTo + ' from ' + d.ruleFrom;
+    if (d.ruleComment) details += '\nComment: ' + d.ruleComment;
+    document.getElementById('modal-details').textContent = details;
+
+    document.getElementById('modal-tldr').textContent = d.ruleTldr;
+    document.getElementById('modal-eli5').textContent = d.ruleEli5;
+
+    /* Scoped alternative for broad ALLOW rules */
+    const suggSection = document.getElementById('modal-suggestion-section');
+    const suggBody = document.getElementById('modal-suggestions');
+    const nets = Object.keys(networkNames);
+    if (d.ruleAction === 'ALLOW' && (d.ruleFromRaw === 'Anywhere' || d.ruleFromRaw === '*') && d.ruleTo !== 'Anywhere' && nets.length > 0) {
+      let shtml = '<div style="font-size:0.7rem;color:var(--muted);margin-bottom:0.3rem">Scope this rule to a specific network:</div>';
+      const parts = d.ruleTo.split('/');
+      const port = parts[0];
+      const proto = parts[1] || 'tcp';
+      nets.forEach(cidr => {
+        shtml += '<div class="modal-command" style="margin-top:0.25rem">sudo ufw allow from ' + cidr + ' to any port ' + port + ' proto ' + proto;
+        shtml += '  <span style="color:var(--muted)"># ' + networkNames[cidr] + '</span></div>';
+      });
+      suggBody.innerHTML = shtml;
+      suggSection.style.display = '';
+    } else {
+      suggSection.style.display = 'none';
+    }
+
+    /* Default policy */
+    const policy = d.ruleDefaultIncoming;
+    const policyMap = { deny: 'denied (silently dropped)', allow: 'allowed through', reject: 'rejected (with notice to sender)' };
+    document.getElementById('modal-default-policy').textContent =
+      'If no rule matches, incoming traffic is ' + (policyMap[policy] || policy) + ' by default.';
+
+    modal.classList.add('open');
+  });
+});
+
+closeBtn.addEventListener('click', () => modal.classList.remove('open'));
+modal.addEventListener('click', e => {
+  if (e.target === modal) modal.classList.remove('open');
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') modal.classList.remove('open');
+});
+
+/* Rule search/filter */
+const searchInput = document.getElementById('rule-search');
+if (searchInput) {
+  const ruleBlocks = document.querySelectorAll('#tab-rules > .rule-block');
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value.toLowerCase().trim();
+    ruleBlocks.forEach(block => {
+      if (!q) {
+        block.style.display = '';
+        return;
+      }
+      const d = block.dataset;
+      const haystack = [d.ruleService, d.ruleAction, d.ruleSourceFriendly, d.ruleFrom, d.ruleTo, d.ruleRaw, d.ruleExplanation, d.ruleComment].join(' ').toLowerCase();
+      block.style.display = haystack.includes(q) ? '' : 'none';
+    });
+  });
+}
 </script>
 
 {% endif %}{# end ufw_installed + no error #}

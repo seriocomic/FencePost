@@ -20,6 +20,7 @@ from .parser import (
 )
 from .explainer import explain_rules
 from .gap_detector import detect_gaps
+from .shadow_detector import detect_shadows
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +135,9 @@ def fetch_host(
 
     # Explain rules
     explain_rules(state.rules, state.listening_ports, network_names or {})
+
+    # Detect shadows/conflicts
+    detect_shadows(state.rules)
 
     # Detect gaps
     state.uncovered_ports = detect_gaps(state.rules, state.listening_ports)

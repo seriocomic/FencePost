@@ -518,6 +518,185 @@ details[open] summary::before{transform:rotate(90deg)}
 .anim-rule{animation:fadeSlideLeft 0.22s ease-out both}
 .anim-pipe{animation:pipeReveal 0.2s ease-out both}
 
+/* ===== Modal ===== */
+.modal-overlay{
+  display:none;
+  position:fixed;
+  inset:0;
+  z-index:100;
+  background:rgba(0,0,0,0.65);
+  -webkit-backdrop-filter:blur(4px);
+  backdrop-filter:blur(4px);
+  align-items:center;
+  justify-content:center;
+  padding:2rem;
+}
+.modal-overlay.open{display:flex}
+.modal-box{
+  background:var(--bg2);
+  border:1px solid var(--border2);
+  border-radius:4px;
+  width:100%;
+  max-width:520px;
+  max-height:80vh;
+  overflow-y:auto;
+  animation:fadeSlideUp 0.18s ease-out;
+}
+.modal-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:1rem 1.25rem;
+  border-bottom:1px solid var(--border);
+}
+.modal-close{
+  font-size:1.3rem;
+  color:var(--muted);
+  background:none;
+  border:none;
+  cursor:pointer;
+  padding:0 0.25rem;
+  line-height:1;
+}
+.modal-close:hover{color:var(--fg)}
+.modal-body{padding:1.25rem}
+.modal-section{margin-bottom:1.1rem}
+.modal-section:last-child{margin-bottom:0}
+.modal-label{
+  font-family:var(--font-display);
+  font-size:0.6rem;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:0.12em;
+  color:var(--muted);
+  margin-bottom:0.4rem;
+}
+.modal-tldr{
+  font-family:var(--font-body);
+  font-size:0.82rem;
+  color:var(--accent);
+  padding:0.5rem 0.75rem;
+  background:var(--accent-dim);
+  border-left:3px solid var(--accent);
+  border-radius:0 2px 2px 0;
+}
+.modal-eli5{
+  font-size:0.82rem;
+  line-height:1.7;
+  color:var(--fg);
+  padding:0.5rem 0.75rem;
+  background:var(--bg3);
+  border-radius:2px;
+}
+.rule-clickable{cursor:pointer}
+.modal-raw{
+  font-family:var(--font-body);
+  font-size:0.75rem;
+  line-height:1.5;
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-radius:3px;
+  padding:0.6rem 0.75rem;
+  white-space:pre;
+  color:var(--accent);
+  overflow-x:auto;
+}
+.modal-position{
+  font-size:0.72rem;
+  color:var(--fg2);
+  line-height:1.6;
+}
+.modal-position strong{color:var(--fg)}
+.modal-strictness{
+  display:inline-block;
+  font-family:var(--font-display);
+  font-size:0.58rem;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:0.08em;
+  padding:0.12rem 0.45rem;
+  border-radius:2px;
+  border:1px solid;
+}
+.modal-strictness-broad{color:var(--limit);background:var(--limit-bg);border-color:var(--limit-border)}
+.modal-strictness-scoped{color:var(--allow);background:var(--allow-bg);border-color:var(--allow-border)}
+.modal-strictness-restrictive{color:var(--deny);background:var(--deny-bg);border-color:var(--deny-border)}
+.modal-strictness-protective{color:var(--reject);background:var(--reject-bg);border-color:var(--reject-border)}
+.modal-default-policy{
+  font-size:0.72rem;
+  color:var(--muted);
+  padding:0.5rem 0.75rem;
+  background:var(--bg3);
+  border-radius:2px;
+  border-left:3px solid var(--border2);
+}
+.modal-rule-group{
+  border:1px solid var(--border);
+  border-radius:3px;
+  padding:0.75rem;
+  margin-bottom:0.5rem;
+  background:var(--bg);
+}
+.modal-rule-group:last-child{margin-bottom:0}
+.rule-shadowed{opacity:0.55}
+.rule-shadowed:hover{opacity:0.75}
+.badge-shadow{
+  color:var(--limit);
+  background:var(--limit-bg);
+  border-color:var(--limit-border);
+}
+.modal-shadow-warning{
+  font-size:0.78rem;
+  color:var(--limit);
+  padding:0.5rem 0.75rem;
+  background:var(--limit-bg);
+  border-left:3px solid var(--limit);
+  border-radius:0 2px 2px 0;
+}
+.chip-clickable{cursor:pointer}
+.modal-command{
+  font-family:var(--font-body);
+  font-size:0.72rem;
+  line-height:1.5;
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-left:3px solid var(--accent);
+  border-radius:0 3px 3px 0;
+  padding:0.5rem 0.75rem;
+  white-space:pre;
+  color:var(--fg);
+  overflow-x:auto;
+}
+/* ===== Compare Table ===== */
+.compare-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:0.75rem;
+}
+.compare-table th,.compare-table td{
+  padding:0.5rem 0.75rem;
+  border-bottom:1px solid var(--border);
+  text-align:left;
+  vertical-align:top;
+}
+.compare-table th{
+  font-family:var(--font-display);
+  font-size:0.65rem;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:0.12em;
+  color:var(--muted);
+  position:sticky;
+  top:0;
+  background:var(--bg2);
+  z-index:10;
+}
+.compare-table tr:hover td{background:var(--bg3)}
+.compare-row-inconsistent{border-left:3px solid var(--limit)}
+.compare-cell-empty{color:var(--muted);font-style:italic}
+.compare-wrap{overflow-x:auto}
+.pill{cursor:pointer}
+
 /* ===== Login ===== */
 .login-wrap{
   display:flex;
@@ -607,6 +786,7 @@ details[open] summary::before{transform:rotate(90deg)}
     <a href="/" class="topbar-brand">FencePost</a>
     <nav class="topbar-nav">
       <a href="/" class="{% if active_page == 'overview' %}active{% endif %}">Overview</a>
+      <a href="/compare" class="{% if active_page == 'compare' %}active{% endif %}">Compare</a>
       <a href="/diagnose" class="{% if active_page == 'diagnose' %}active{% endif %}">Diagnose</a>
     </nav>
     <div class="topbar-meta">
