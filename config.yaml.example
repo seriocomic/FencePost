@@ -1,0 +1,35 @@
+timezone: Australia/Melbourne
+
+hosts:
+  - name: Web Server
+    hostname: 192.168.1.10
+    ssh_user: deploy
+    ssh_port: 22
+    is_docker_host: true
+
+  - name: Database Server
+    hostname: 192.168.1.11
+    ssh_user: deploy
+    ssh_port: 22
+    is_docker_host: false
+
+notifications:
+  url: http://192.168.1.10:8888/api/events
+  channel: FencePost
+
+ssh:
+  key_path: /app/ssh/id_ed25519
+  timeout: 10
+
+networks:
+  "192.168.1.0/24": "Trusted VLAN"
+  "192.168.10.0/24": "IoT VLAN"
+  "192.168.20.0/24": "Guest VLAN"
+
+devices:
+  - name: My Laptop
+    ip: 192.168.1.5
+    vlan: Trusted VLAN
+  - name: My Phone
+    ip: 192.168.1.0/24
+    vlan: Trusted VLAN
