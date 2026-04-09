@@ -15,6 +15,12 @@ Multi-host UFW firewall dashboard. Connects to Linux hosts over SSH, parses fire
 - **Change detection** -- compares current state against last snapshot and posts events (rules added/removed, UFW toggled, hosts unreachable) to a webhook
 - **Docker-aware** -- flags Docker hosts where iptables may bypass UFW
 
+## Screenshots
+![Home](docs/screenshots/fencepost-home.png)
+![Rule List](docs/screenshots/fencepost-rule-list.png)
+![Rule Detail](docs/screenshots/fencepost-rule-detail.png)
+
+
 ## Pages
 
 | Route | Description |
