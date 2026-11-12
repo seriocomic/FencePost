@@ -26,6 +26,13 @@ networks:
   "192.168.10.0/24": "IoT VLAN"
   "192.168.20.0/24": "Guest VLAN"
 
+# Override or extend the built-in port-to-service mappings.
+# These take precedence over the defaults in explainer.py.
+custom_ports:
+  3000: "My App"
+  8080: "Reverse Proxy"
+  8888: "EventFeed"
+
 devices:
   - name: My Laptop
     ip: 192.168.1.5

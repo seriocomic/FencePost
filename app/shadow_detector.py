@@ -115,6 +115,8 @@ def _source_covers(outer_addr: str, inner_addr: str) -> bool:
     try:
         outer_net = ipaddress.ip_network(outer_addr, strict=False)
         inner_net = ipaddress.ip_network(inner_addr, strict=False)
+        if outer_net.version != inner_net.version:
+            return False
         return (outer_net.network_address <= inner_net.network_address
                 and outer_net.broadcast_address >= inner_net.broadcast_address)
     except ValueError:

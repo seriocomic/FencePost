@@ -48,11 +48,15 @@ def explain_rules(
     rules: list[UFWRule],
     listening_ports: list[ListeningPort],
     network_names: dict[str, str],
+    custom_ports: dict[int, str] | None = None,
 ) -> None:
     """Mutate rules in-place, filling explanation fields.
 
     Also enriches port-to-service mapping using ss process data.
+    custom_ports overrides from config.yaml take precedence over WELL_KNOWN_PORTS.
     """
+    port_map = {**WELL_KNOWN_PORTS, **(custom_ports or {})}
+
     # Build a process-based port→name map from ss data
     process_services: dict[int, str] = {}
     for lp in listening_ports:
@@ -65,8 +69,8 @@ def explain_rules(
         # Service name: check process map, then well-known, then fallback
         if port_num and port_num in process_services:
             rule.service_name = process_services[port_num]
-        elif port_num and port_num in WELL_KNOWN_PORTS:
-            rule.service_name = WELL_KNOWN_PORTS[port_num]
+        elif port_num and port_num in port_map:
+            rule.service_name = port_map[port_num]
         elif rule.to == "Anywhere" or not port_num:
             rule.service_name = "All Ports"
         else:

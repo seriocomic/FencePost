@@ -46,6 +46,14 @@ def load_config(path: str = "config.yaml") -> dict:
         return yaml.safe_load(f)
 
 
+def _parse_custom_ports(config: dict) -> dict[int, str]:
+    """Read custom_ports from config, coercing string keys to int."""
+    raw = config.get("custom_ports", {})
+    if not raw:
+        return {}
+    return {int(k): v for k, v in raw.items()}
+
+
 def get_hosts(config: dict) -> list[HostConfig]:
     return [
         HostConfig(
@@ -64,6 +72,7 @@ def fetch_host(
     ssh_key_path: str,
     timeout: int = 10,
     network_names: dict[str, str] | None = None,
+    custom_ports: dict[int, str] | None = None,
 ) -> HostFirewallState:
     """SSH into a host, run commands, parse output, return state."""
     state = HostFirewallState(
@@ -134,7 +143,7 @@ def fetch_host(
     state.rules_last_modified = parse_stat_mtime(results[COMMANDS[3]])
 
     # Explain rules
-    explain_rules(state.rules, state.listening_ports, network_names or {})
+    explain_rules(state.rules, state.listening_ports, network_names or {}, custom_ports)
 
     # Detect shadows/conflicts
     detect_shadows(state.rules)
@@ -154,12 +163,13 @@ def fetch_all_hosts(
     key_path = ssh_config.get("key_path", "/app/ssh/id_ed25519")
     timeout = ssh_config.get("timeout", 10)
     network_names = config.get("networks", {})
+    custom_ports = _parse_custom_ports(config)
 
     states = []
     with ThreadPoolExecutor(max_workers=len(hosts)) as executor:
         futures = {
             executor.submit(
-                fetch_host, host, key_path, timeout, network_names
+                fetch_host, host, key_path, timeout, network_names, custom_ports
             ): host
             for host in hosts
         }
@@ -198,5 +208,6 @@ def fetch_single_host(
     key_path = ssh_config.get("key_path", "/app/ssh/id_ed25519")
     timeout = ssh_config.get("timeout", 10)
     network_names = config.get("networks", {})
+    custom_ports = _parse_custom_ports(config)
 
-    return fetch_host(target, key_path, timeout, network_names)
+    return fetch_host(target, key_path, timeout, network_names, custom_ports)
